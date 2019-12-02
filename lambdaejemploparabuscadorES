@@ -1,0 +1,47 @@
+import boto3
+import json
+import requests
+from requests_aws4auth import AWS4Auth
+
+region = '' # la region que usas por ejemplo us-west-1
+service = 'es'
+credentials = boto3.Session().get_credentials()
+awsauth = AWS4Auth(credentials.access_key, credentials.secret_key, region, service, session_token=credentials.token)
+
+host = '' # Por ejemplo search-mydomain-id.us-west-1.es.amazonaws.com
+index = 'movies'
+url = 'https://' + host + '/' + index + '/_search'
+
+# EJECUCION DE LAMBDA COMIENZA AQUI
+def handler(event, context):
+
+    # Poner la solicitur de user en la DSL query para resultados mas exactos.
+    # Algunos campos estan boosted (^).
+    query = {
+        "size": 25,
+        "query": {
+            "multi_match": {
+                "query": event['queryStringParameters']['q'],
+                "fields": ["fields.title^4", "fields.plot^2", "fields.actors", "fields.directors"]
+            }
+        }
+    }
+
+    # ES 6.x requiere un Content-Type header explicito // todavia no se que es eso
+    headers = { "Content-Type": "application/json" }
+
+    # Hacer el request firmado de HTTP 
+    r = requests.get(url, auth=awsauth, headers=headers, data=json.dumps(query))
+
+    # Crear la respuesta y añadir contennido extra para "apoyar" a CORS
+    response = {
+        "statusCode": 200,
+        "headers": {
+            "Access-Control-Allow-Origin": '*'
+        },
+        "isBase64Encoded": False
+    }
+
+    # Añade los resultados de la busqueda a la respuesta
+    response['body'] = r.text
+    return response
